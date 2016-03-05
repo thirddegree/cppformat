@@ -594,22 +594,35 @@ FMT_FUNC void fmt::internal::format_windows_error(
 
    public:
     String() : str_() {}
-    ~String() { LocalFree(str_); }
+    ~String() { HeapFree(GetProcessHeap(), 0, str_); }
     LPWSTR *ptr() { return &str_; }
     LPCWSTR c_str() const { return str_; }
   };
   FMT_TRY {
     String system_message;
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 0,
-        error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<LPWSTR>(system_message.ptr()), 0, 0)) {
-      UTF16ToUTF8 utf8_message;
-      if (utf8_message.convert(system_message.c_str()) == ERROR_SUCCESS) {
-        out << message << ": " << utf8_message;
-        return;
+    #if defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP
+      if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 0,
+          error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+          reinterpret_cast<LPWSTR>(system_message.ptr()), 0, 0)) {
+          UTF16ToUTF8 utf8_message;
+          if (utf8_message.convert(system_message.c_str()) == ERROR_SUCCESS) {
+              out << message << ": " << utf8_message;
+              return;
+          }
       }
-    }
+    #else
+      if (FormatMessageW(
+          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 0,
+          error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+          reinterpret_cast<LPWSTR>(system_message.ptr()), 0, 0)) {
+          UTF16ToUTF8 utf8_message;
+          if (utf8_message.convert(system_message.c_str()) == ERROR_SUCCESS) {
+              out << message << ": " << utf8_message;
+              return;
+          }
+      }
+    #endif
   } FMT_CATCH(...) {}
   fmt::format_error_code(out, error_code, message);  // 'fmt::' is for bcc32.
 }
