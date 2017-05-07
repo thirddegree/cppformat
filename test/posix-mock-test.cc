@@ -29,7 +29,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "posix-mock.h"
-#include "cppformat/posix.cc"
+#include "fmt/posix.cc"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -453,12 +453,6 @@ TEST(BufferedFileTest, FilenoNoRetry) {
   fileno_count = 0;
 }
 
-template <typename Mock>
-struct ScopedMock : testing::StrictMock<Mock> {
-  ScopedMock() { Mock::instance = this; }
-  ~ScopedMock() { Mock::instance = 0; }
-};
-
 struct TestMock {
   static TestMock *instance;
 } *TestMock::instance;
@@ -487,6 +481,9 @@ struct LocaleMock {
 } *LocaleMock::instance;
 
 #ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4273)
+
 _locale_t _create_locale(int category, const char *locale) {
   return LocaleMock::instance->newlocale(category, locale, 0);
 }
@@ -498,13 +495,14 @@ void _free_locale(_locale_t locale) {
 double _strtod_l(const char *nptr, char **endptr, _locale_t locale) {
   return LocaleMock::instance->strtod_l(nptr, endptr, locale);
 }
+# pragma warning(pop)
 #endif
 
 LocaleType newlocale(int category_mask, const char *locale, LocaleType base) {
   return LocaleMock::instance->newlocale(category_mask, locale, base);
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__FreeBSD__)
 typedef int FreeLocaleResult;
 #else
 typedef void FreeLocaleResult;

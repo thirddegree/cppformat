@@ -28,8 +28,8 @@
 #include <cstdlib>  // std::exit
 #include <cstring>
 
+#include "fmt/posix.h"
 #include "gtest-extra.h"
-#include "cppformat/posix.h"
 #include "util.h"
 
 #ifdef fileno
@@ -232,7 +232,7 @@ TEST(FileTest, MoveAssignmentClosesFile) {
 File OpenBufferedFile(int &fd) {
   File f = open_file();
   fd = f.descriptor();
-  return std::move(f);
+  return f;
 }
 
 TEST(FileTest, MoveFromTemporaryInCtor) {

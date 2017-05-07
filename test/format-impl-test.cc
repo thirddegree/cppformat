@@ -26,16 +26,21 @@
  */
 
 #define FMT_NOEXCEPT
+#undef FMT_SHARED
 #include "test-assert.h"
 
-// Include format.cc instead of format.h to test implementation-specific stuff.
-#include "cppformat/format.cc"
+// Include *.cc instead of *.h to test implementation-specific stuff.
+#include "fmt/format.cc"
+#include "fmt/printf.cc"
 
+#include <algorithm>
 #include <cstring>
 
+#include "gmock/gmock.h"
 #include "gtest-extra.h"
 #include "util.h"
 
+#undef min
 #undef max
 
 TEST(FormatTest, ArgConverter) {
@@ -43,7 +48,7 @@ TEST(FormatTest, ArgConverter) {
   Arg arg = Arg();
   arg.type = Arg::LONG_LONG;
   arg.long_long_value = std::numeric_limits<fmt::LongLong>::max();
-  fmt::ArgConverter<fmt::LongLong>(arg, 'd').visit(arg);
+  fmt::internal::ArgConverter<fmt::LongLong>(arg, 'd').visit(arg);
   EXPECT_EQ(Arg::LONG_LONG, arg.type);
 }
 
@@ -59,7 +64,8 @@ TEST(FormatTest, StrError) {
   char *message = 0;
   char buffer[BUFFER_SIZE];
   EXPECT_ASSERT(fmt::safe_strerror(EDOM, message = 0, 0), "invalid buffer");
-  EXPECT_ASSERT(fmt::safe_strerror(EDOM, message = buffer, 0), "invalid buffer");
+  EXPECT_ASSERT(fmt::safe_strerror(EDOM, message = buffer, 0),
+                "invalid buffer");
   buffer[0] = 'x';
 #if defined(_GNU_SOURCE) && !defined(__COVERITY__)
   // Use invalid error code to make sure that safe_strerror returns an error

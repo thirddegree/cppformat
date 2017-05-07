@@ -2,19 +2,29 @@ message(STATUS "CMake version: ${CMAKE_VERSION}")
 
 cmake_minimum_required(VERSION 2.8.12)
 
-# determine if cppformat is built as sub project (using add_subdirectory)
-# or if it is the master project
+# Determine if fmt is built as a subproject (using add_subdirectory)
+# or if it is the master project.
 set(MASTER_PROJECT OFF)
 if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   set(MASTER_PROJECT ON)
 endif ()
 
+# Joins arguments and places the results in ${result_var}.
+function(join result_var)
+  set(result )
+  foreach (arg ${ARGN})
+    set(result "${result}${arg}")
+  endforeach ()
+  set(${result_var} "${result}" PARENT_SCOPE)
+endfunction()
+
 # Set the default CMAKE_BUILD_TYPE to Release.
 # This should be done before the project command since the latter can set
 # CMAKE_BUILD_TYPE itself (it does so for nmake).
 if (NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING
-    "Choose the type of build, options are: None(CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel.")
+  join(doc "Choose the type of build, options are: None(CMAKE_CXX_FLAGS or "
+           "CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel.")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING ${doc})
 endif ()
 
 option(FMT_PEDANTIC "Enable extra warnings and expensive tests." OFF)
@@ -25,16 +35,20 @@ option(FMT_INSTALL "Generate the install target." ${MASTER_PROJECT})
 option(FMT_TEST "Generate the test target." ${MASTER_PROJECT})
 option(FMT_USE_CPP11 "Enable the addition of C++11 compiler flags." ON)
 
-project(FORMAT)
+project(FMT)
 
-# starting with cmake 3.0 VERSION is part of the project command
-set(CPPFORMAT_VERSION 2.1.0)
-if (NOT CPPFORMAT_VERSION MATCHES "^([0-9]+).([0-9]+).([0-9]+)$")
-  message(FATAL_ERROR "Invalid version format ${CPPFORMAT_VERSION}.")
+# Starting with cmake 3.0 VERSION is part of the project command.
+file(READ fmt/format.h format_h)
+if (NOT format_h MATCHES "FMT_VERSION ([0-9]+)([0-9][0-9])([0-9][0-9])")
+  message(FATAL_ERROR "Cannot get FMT_VERSION from format.h.")
 endif ()
-set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
-set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
-set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+# Use math to skip leading zeros if any.
+math(EXPR CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
+math(EXPR CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
+math(EXPR CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+join(FMT_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.
+                 ${CPACK_PACKAGE_VERSION_PATCH})
+message(STATUS "Version: ${FMT_VERSION}")
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
@@ -43,7 +57,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_SOURCE_DIR}/support/cmake")
 
-include(testCxx11)
+include(cxx11)
 
 if (CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   set(PEDANTIC_COMPILE_FLAGS -Wall -Wextra -Wshadow -pedantic)
@@ -51,7 +65,7 @@ endif ()
 
 if (MASTER_PROJECT AND CMAKE_GENERATOR MATCHES "Visual Studio")
   # If Microsoft SDK is installed create script run-msbuild.bat that
-  # calls SetEnv.cmd to to set up build environment and runs msbuild.
+  # calls SetEnv.cmd to set up build environment and runs msbuild.
   # It is useful when building Visual Studio projects with the SDK
   # toolchain rather than Visual Studio.
   include(FindSetEnv)
@@ -72,7 +86,7 @@ else ()
   check_symbol_exists(open fcntl.h HAVE_OPEN)
 endif ()
 
-add_subdirectory(cppformat)
+add_subdirectory(fmt)
 
 if (FMT_DOC)
   add_subdirectory(doc)
@@ -98,8 +112,8 @@ if (MASTER_PROJECT AND EXISTS ${gitignore})
 
   set(CPACK_SOURCE_GENERATOR ZIP)
   set(CPACK_SOURCE_IGNORE_FILES ${ignored_files})
-  set(CPACK_SOURCE_PACKAGE_FILE_NAME cppformat-${CPPFORMAT_VERSION})
-  set(CPACK_PACKAGE_NAME cppformat)
+  set(CPACK_SOURCE_PACKAGE_FILE_NAME fmt-${FMT_VERSION})
+  set(CPACK_PACKAGE_NAME fmt)
   set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/README.rst)
   include(CPack)
 endif ()

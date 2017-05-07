@@ -1,3 +1,9 @@
+# C++11 feature support detection
+
+if (NOT FMT_USE_CPP11)
+  return()
+endif ()
+
 include(CheckCXXCompilerFlag)
 
 if (FMT_USE_CPP11)
@@ -14,7 +20,14 @@ if (FMT_USE_CPP11)
     check_cxx_source_compiles("
       #include <unistd.h>
       int main() {}" FMT_CPP11_UNISTD_H)
-    if (FMT_CPP11_CMATH AND FMT_CPP11_UNISTD_H)
+    # Check if snprintf works with -std=c++11. It may not in MinGW.
+    check_cxx_source_compiles("
+      #include <stdio.h>
+      int main() {
+        char buffer[10];
+        snprintf(buffer, 10, \"foo\");
+      }" FMT_CPP11_SNPRINTF)
+    if (FMT_CPP11_CMATH AND FMT_CPP11_UNISTD_H AND FMT_CPP11_SNPRINTF)
       set(CPP11_FLAG -std=c++11)
     else ()
       check_cxx_compiler_flag(-std=gnu++11 HAVE_STD_GNUPP11_FLAG)
@@ -29,6 +42,11 @@ if (FMT_USE_CPP11)
       set(CPP11_FLAG -std=c++0x)
     endif ()
   endif ()
+endif ()
+
+if (CMAKE_CXX_STANDARD)
+  # Don't use -std compiler flag if CMAKE_CXX_STANDARD is specified.
+  set(CPP11_FLAG )
 endif ()
 
 set(CMAKE_REQUIRED_FLAGS ${CPP11_FLAG})
@@ -57,4 +75,11 @@ check_cxx_source_compiles("
   class C { void operator=(const C&); };
   int main() { static_assert(!std::is_copy_assignable<C>::value, \"\"); }"
   SUPPORTS_TYPE_TRAITS)
+
+# Check if user-defined literals are available
+check_cxx_source_compiles("
+  void operator\"\" _udl(long double);
+  int main() {}"
+  SUPPORTS_USER_DEFINED_LITERALS)
+
 set(CMAKE_REQUIRED_FLAGS )

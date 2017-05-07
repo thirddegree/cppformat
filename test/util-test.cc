@@ -47,7 +47,7 @@
 # include <windows.h>
 #endif
 
-#include "cppformat/format.h"
+#include "fmt/format.h"
 
 #undef max
 
@@ -62,9 +62,10 @@ using testing::StrictMock;
 namespace {
 
 struct Test {};
+
 template <typename Char>
-std::basic_ostream<Char> &operator<<(std::basic_ostream<Char> &os, Test) {
-  return os << "test";
+void format_arg(fmt::BasicFormatter<Char> &f, const Char *, Test) {
+  f.writer() << "test";
 }
 
 template <typename Char, typename T>
@@ -82,8 +83,8 @@ void CheckForwarding(
   // Check if value_type is properly defined.
   AllocatorRef< MockAllocator<int> >::value_type *ptr = &mem;
   // Check forwarding.
-  EXPECT_CALL(alloc, allocate(42)).WillOnce(Return(ptr));
-  ref.allocate(42);
+  EXPECT_CALL(alloc, allocate(42, 0)).WillOnce(Return(ptr));
+  ref.allocate(42, 0);
   EXPECT_CALL(alloc, deallocate(ptr, 42));
   ref.deallocate(ptr, 42);
 }
@@ -338,7 +339,7 @@ TEST(MemoryBufferTest, Grow) {
   EXPECT_EQ(10u, buffer.capacity());
   int mem[20];
   mem[7] = 0xdead;
-  EXPECT_CALL(alloc, allocate(20)).WillOnce(Return(mem));
+  EXPECT_CALL(alloc, allocate(20, 0)).WillOnce(Return(mem));
   buffer.grow(20);
   EXPECT_EQ(20u, buffer.capacity());
   // Check if size elements have been copied
@@ -359,7 +360,7 @@ TEST(MemoryBufferTest, Allocator) {
     MemoryBuffer<char, 10, TestAllocator> buffer2((TestAllocator(&alloc)));
     EXPECT_EQ(&alloc, buffer2.get_allocator().get());
     std::size_t size = 2 * fmt::internal::INLINE_BUFFER_SIZE;
-    EXPECT_CALL(alloc, allocate(size)).WillOnce(Return(&mem));
+    EXPECT_CALL(alloc, allocate(size, 0)).WillOnce(Return(&mem));
     buffer2.reserve(size);
     EXPECT_CALL(alloc, deallocate(&mem, size));
   }
@@ -372,13 +373,13 @@ TEST(MemoryBufferTest, ExceptionInDeallocate) {
   std::size_t size = 2 * fmt::internal::INLINE_BUFFER_SIZE;
   std::vector<char> mem(size);
   {
-    EXPECT_CALL(alloc, allocate(size)).WillOnce(Return(&mem[0]));
+    EXPECT_CALL(alloc, allocate(size, 0)).WillOnce(Return(&mem[0]));
     buffer.resize(size);
     std::fill(&buffer[0], &buffer[0] + size, 'x');
   }
   std::vector<char> mem2(2 * size);
   {
-    EXPECT_CALL(alloc, allocate(2 * size)).WillOnce(Return(&mem2[0]));
+    EXPECT_CALL(alloc, allocate(2 * size, 0)).WillOnce(Return(&mem2[0]));
     std::exception e;
     EXPECT_CALL(alloc, deallocate(&mem[0], size)).WillOnce(testing::Throw(e));
     EXPECT_THROW(buffer.reserve(2 * size), std::exception);
@@ -580,7 +581,7 @@ struct CustomFormatter {
   typedef char Char;
 };
 
-void format(CustomFormatter &, const char *&s, const Test &) {
+void format_arg(CustomFormatter &, const char *&s, const Test &) {
   s = "custom_format";
 }
 
@@ -603,7 +604,7 @@ struct Result {
   Result(const wchar_t *s) : arg(make_arg<wchar_t>(s)) {}
 };
 
-struct TestVisitor : fmt::internal::ArgVisitor<TestVisitor, Result> {
+struct TestVisitor : fmt::ArgVisitor<TestVisitor, Result> {
   Result visit_int(int value) { return value; }
   Result visit_uint(unsigned value) { return value; }
   Result visit_long_long(fmt::LongLong value) { return value; }
@@ -612,10 +613,14 @@ struct TestVisitor : fmt::internal::ArgVisitor<TestVisitor, Result> {
   Result visit_long_double(long double value) { return value; }
   Result visit_char(int value) { return static_cast<char>(value); }
   Result visit_cstring(const char *s) { return s; }
-  Result visit_string(Arg::StringValue<char> s) { return s.value; }
-  Result visit_wstring(Arg::StringValue<wchar_t> s) { return s.value; }
+  Result visit_string(fmt::internal::Arg::StringValue<char> s) {
+    return s.value;
+  }
+  Result visit_wstring(fmt::internal::Arg::StringValue<wchar_t> s) {
+    return s.value;
+  }
   Result visit_pointer(const void *p) { return p; }
-  Result visit_custom(Arg::CustomValue c) {
+  Result visit_custom(fmt::internal::Arg::CustomValue c) {
     return *static_cast<const ::Test*>(c.value);
   }
 };
@@ -652,7 +657,7 @@ TEST(ArgVisitorTest, VisitAll) {
   EXPECT_EQ(&t, result.arg.custom.value);
 }
 
-struct TestAnyVisitor : fmt::internal::ArgVisitor<TestAnyVisitor, Result> {
+struct TestAnyVisitor : fmt::ArgVisitor<TestAnyVisitor, Result> {
   template <typename T>
   Result visit_any_int(T value) { return value; }
 
@@ -677,7 +682,7 @@ TEST(ArgVisitorTest, VisitAny) {
 }
 
 struct TestUnhandledVisitor :
-    fmt::internal::ArgVisitor<TestUnhandledVisitor, const char *> {
+    fmt::ArgVisitor<TestUnhandledVisitor, const char *> {
   const char *visit_unhandled_arg() { return "test"; }
 };
 
@@ -703,7 +708,7 @@ TEST(ArgVisitorTest, VisitUnhandledArg) {
 
 TEST(ArgVisitorTest, VisitInvalidArg) {
   Arg arg = Arg();
-  arg.type = static_cast<Arg::Type>(Arg::CUSTOM + 1);
+  arg.type = static_cast<Arg::Type>(Arg::NONE);
   EXPECT_ASSERT(TestVisitor().visit(arg), "invalid argument type");
 }
 
@@ -829,10 +834,10 @@ void check_throw_error(int error_code, FormatErrorMessage format) {
 
 TEST(UtilTest, FormatSystemError) {
   fmt::MemoryWriter message;
-  fmt::internal::format_system_error(message, EDOM, "test");
+  fmt::format_system_error(message, EDOM, "test");
   EXPECT_EQ(fmt::format("test: {}", get_system_error(EDOM)), message.str());
   message.clear();
-  fmt::internal::format_system_error(
+  fmt::format_system_error(
         message, EDOM, fmt::StringRef(0, std::numeric_limits<size_t>::max()));
   EXPECT_EQ(fmt::format("error {}", EDOM), message.str());
 }
@@ -841,12 +846,12 @@ TEST(UtilTest, SystemError) {
   fmt::SystemError e(EDOM, "test");
   EXPECT_EQ(fmt::format("test: {}", get_system_error(EDOM)), e.what());
   EXPECT_EQ(EDOM, e.error_code());
-  check_throw_error<fmt::SystemError>(EDOM, fmt::internal::format_system_error);
+  check_throw_error<fmt::SystemError>(EDOM, fmt::format_system_error);
 }
 
 TEST(UtilTest, ReportSystemError) {
   fmt::MemoryWriter out;
-  fmt::internal::format_system_error(out, EDOM, "test error");
+  fmt::format_system_error(out, EDOM, "test error");
   out << '\n';
   EXPECT_WRITE(stderr, fmt::report_system_error(EDOM, "test error"), out.str());
 }
@@ -873,6 +878,27 @@ TEST(UtilTest, FormatWindowsError) {
   EXPECT_EQ(fmt::format("error {}", ERROR_FILE_EXISTS), actual_message.str());
 }
 
+TEST(UtilTest, FormatLongWindowsError) {
+  LPWSTR message = 0;
+  // this error code is not available on all Windows platforms and
+  // Windows SDKs, so do not fail the test if the error string cannot
+  // be retrieved.
+  const int provisioning_not_allowed = 0x80284013L /*TBS_E_PROVISIONING_NOT_ALLOWED*/;
+  if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 0,
+      provisioning_not_allowed, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      reinterpret_cast<LPWSTR>(&message), 0, 0) == 0) {
+    return;
+  }
+  fmt::internal::UTF16ToUTF8 utf8_message(message);
+  LocalFree(message);
+  fmt::MemoryWriter actual_message;
+  fmt::internal::format_windows_error(
+      actual_message, provisioning_not_allowed, "test");
+  EXPECT_EQ(fmt::format("test: {}", utf8_message.str()),
+      actual_message.str());
+}
+
 TEST(UtilTest, WindowsError) {
   check_throw_error<fmt::WindowsError>(
       ERROR_FILE_EXISTS, fmt::internal::format_windows_error);
@@ -889,14 +915,11 @@ TEST(UtilTest, ReportWindowsError) {
 #endif  // _WIN32
 
 enum TestEnum2 {};
-enum TestEnum3 {};
-std::ostream &operator<<(std::ostream &, TestEnum3);
 
 TEST(UtilTest, ConvertToInt) {
   EXPECT_TRUE(fmt::internal::ConvertToInt<char>::enable_conversion);
   EXPECT_FALSE(fmt::internal::ConvertToInt<const char *>::enable_conversion);
   EXPECT_TRUE(fmt::internal::ConvertToInt<TestEnum2>::value);
-  EXPECT_FALSE(fmt::internal::ConvertToInt<TestEnum3>::value);
 }
 
 #if FMT_USE_ENUM_BASE
@@ -932,4 +955,18 @@ TEST(UtilTest, Conditional) {
   char c = 0;
   fmt::internal::Conditional<false, int, char>::type *pc = &c;
   (void)pc;
+}
+
+struct TestLConv {
+  char *thousands_sep;
+};
+
+struct EmptyLConv {};
+
+TEST(UtilTest, ThousandsSep) {
+  char foo[] = "foo";
+  TestLConv lc = {foo};
+  EXPECT_EQ("foo", fmt::internal::thousands_sep(&lc).to_string());
+  EmptyLConv empty_lc;
+  EXPECT_EQ("", fmt::internal::thousands_sep(&empty_lc));
 }
